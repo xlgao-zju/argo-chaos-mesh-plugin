@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ExecutorPlugin
+metadata:
+  name: chaosMesh
+spec:
+  sidecar:
+    container:
+      image: ccr.ccs.tencentyun.com/xlgao/argo-chaos-mesh-plugin:v0.0.1
+      name: chaos-mesh-executor-plugin
+      command:
+       - argo-chaos-mesh-plugin
+       - server
+      ports:
+        - containerPort: 8443
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534 # nobody
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "250m"
+        limits:
+          memory: "512Mi"
+          cpu: "1"

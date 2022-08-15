@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: hello-
+  namespace: argo
+spec:
+  serviceAccountName: chaosmesh-executor-plugin
+  automountServiceAccountToken: true
+  entrypoint: main
+  templates:
+    - name: main
+      steps:
+        - - name: step1
+            template: cpu1
+        - - name: step2
+            template: cpu2
+    - name: cpu1
+      executor:
+        serviceAccountName: chaosmesh-executor-plugin
+      plugin:
+        chaosmesh:
+          taskType: inject
+          chaosKind: StressChaos
+          chaosBody:
+            kind: StressChaos
+            apiVersion: chaos-mesh.org/v1alpha1
+            metadata:
+              namespace: default
+              name: cpu-test
+            spec:
+              selector:
+                namespaces:
+                  - default
+                labelSelectors:
+                  run: nginx
+              mode: all
+              stressors:
+                cpu:
+                  workers: 1
+                  load: 50
+    - name: cpu2
+      executor:
+        serviceAccountName: chaosmesh-executor-plugin
+      plugin:
+        chaosmesh:
+          taskType: inject
+          chaosKind: StressChaos
+          chaosBody:
+            kind: StressChaos
+            apiVersion: chaos-mesh.org/v1alpha1
+            metadata:
+              namespace: default
+              name: cpu-test2
+            spec:
+              selector:
+                namespaces:
+                  - default
+                labelSelectors:
+                  run: nginx
+              mode: all
+              stressors:
+                cpu:
+                  workers: 1
+                  load: 50

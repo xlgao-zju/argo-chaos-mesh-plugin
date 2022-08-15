@@ -1,0 +1,44 @@
+{
+  "workflow": {
+    "metadata": {
+      "name": "test"
+    }
+  },
+  "template": {
+    "name": "main",
+    "executor": {
+      "serviceAccountName": "volcano-executor-plugin"
+    },
+    "plugin": {
+      "chaosmesh": {
+        "taskType": "inject",
+        "chaosKind": "StressChaos",
+        "chaosBody": {
+          "kind": "StressChaos",
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "metadata": {
+            "namespace": "default",
+            "name": "cpu-test"
+          },
+          "spec": {
+            "selector": {
+              "namespaces": [
+                "default"
+              ],
+              "labelSelectors": {
+                "run": "nginx"
+              }
+            },
+            "mode": "all",
+            "stressors": {
+              "cpu": {
+                "workers": 1,
+                "load": 50
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
