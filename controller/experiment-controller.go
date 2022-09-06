@@ -13,6 +13,7 @@ import (
 	executorplugins "github.com/argoproj/argo-workflows/v3/pkg/plugins/executor"
 	chaosmeshapi "github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
 	"github.com/gin-gonic/gin"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
 )
@@ -79,7 +80,12 @@ func (ct *Controller) InjectExperiment(ctx *gin.Context, kind string, chaos chao
 	chaosNamespace := chaos.GetNamespace()
 	experiment, err := ct.ChaosClient.GetExperiment(ctx, chaosNamespace, chaosName, kind)
 	if err != nil {
-		exists = false
+		if errors.IsNotFound(err) {
+			exists = false
+		} else {
+			klog.Errorf("failed to get chaos mesh experiment %s/%s, err %v", chaosNamespace, chaosName, err)
+			return err
+		}
 	} else {
 		exists = true
 	}
@@ -98,20 +104,51 @@ func (ct *Controller) InjectExperiment(ctx *gin.Context, kind string, chaos chao
 		ct.ResponseMsg(ctx, wfv1.NodeFailed, err.Error())
 		return err
 	}
-	ct.ResponseCreated(ctx)
+	ct.ResponseRequeue(ctx, types.TaskTypeInject)
 	return nil
 }
 
+// RecoverExperiment recover chaos experiment
+// since all chaos mesh object has finalizer(which used to recover the experiment),
+// so if we can not find the object,
+// it means the object has been deleted, and the recover process is done.
 func (ct *Controller) RecoverExperiment(ctx *gin.Context, kind string, chaos chaosmeshapi.InnerObject) error {
-	// TODO: support recover experiment
+	chaosName := chaos.GetName()
+	chaosNamespace := chaos.GetNamespace()
+	experiment, err := ct.ChaosClient.GetExperiment(ctx, chaosNamespace, chaosName, kind)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			ct.ResponseMsg(ctx, wfv1.NodeSucceeded, "recover success")
+			return nil
+		} else {
+			klog.Errorf("failed to get chaos mesh experiment %s/%s, err %v", chaosNamespace, chaosName, err)
+			return err
+		}
+	}
+
+	if experiment.GetDeletionTimestamp() == nil {
+		if err = ct.ChaosClient.DeleteExperiment(ctx, chaosNamespace, chaosName, kind); err != nil {
+			klog.Errorf("failed to delete chaos mesh experiment %s/%s, err %v", chaosNamespace, chaosName, err)
+			return err
+		}
+		ct.ResponseRequeue(ctx, types.TaskTypeRecover)
+		return nil
+	} else {
+		deleteAt := experiment.GetDeletionTimestamp()
+		if time.Now().Sub(deleteAt.Time).Seconds() > 30 {
+			ct.ResponseMsg(ctx, wfv1.NodeFailed, "recover timeout after 30 seconds")
+			return nil
+		}
+	}
+
 	return nil
 }
 
-func (ct *Controller) ResponseCreated(ctx *gin.Context) {
+func (ct *Controller) ResponseRequeue(ctx *gin.Context, action types.TaskType) {
 	ctx.JSON(http.StatusOK, &executorplugins.ExecuteTemplateReply{
 		Node: &wfv1.NodeResult{
 			Phase:   wfv1.NodePending,
-			Message: "chaos mesh obj created, wait for injection complete",
+			Message: fmt.Sprintf("chaos mesh experiment %s done", action),
 			Outputs: nil,
 		},
 		Requeue: &metav1.Duration{
@@ -185,17 +222,4 @@ func ConvertToChaosObject(body *types.TaskBody) (chaosmeshapi.InnerObject, error
 		return nil, fmt.Errorf("failed unmarshal chaos body to object, %s", err.Error())
 	}
 	return chaos.(chaosmeshapi.InnerObject), nil
-}
-
-func findEvent(events []chaosmeshapi.RecordEvent, op chaosmeshapi.RecordEventOperation,
-	ty chaosmeshapi.RecordEventType) *chaosmeshapi.RecordEvent {
-	if events == nil {
-		return nil
-	}
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].Operation == op && events[i].Type == ty {
-			return &events[i]
-		}
-	}
-	return nil
 }
