@@ -15,8 +15,7 @@ import (
 )
 
 var (
-	NotFoundErr = fmt.Errorf("resource not found")
-	scheme      = runtime.NewScheme()
+	scheme = runtime.NewScheme()
 )
 
 func init() {
@@ -80,10 +79,7 @@ func (c *client) DeleteExperiment(ctx context.Context, namespace, name, kind str
 	chaos := chaosKind.SpawnObject()
 	namespacedName := types.NamespacedName{Namespace: namespace, Name: name}
 	if err := c.kubeCli.Get(ctx, namespacedName, chaos); err != nil {
-		if isNotFound(err) {
-			return NotFoundErr
-		}
-		return fmt.Errorf("failed get chaos, %s", err.Error())
+		return err
 	}
 
 	if err := c.kubeCli.Delete(ctx, chaos); err != nil {
@@ -102,9 +98,6 @@ func (c *client) GetExperiment(ctx context.Context, namespace, name, kind string
 	chaos := chaosKind.SpawnObject()
 	namespacedName := types.NamespacedName{Namespace: namespace, Name: name}
 	if err := c.kubeCli.Get(ctx, namespacedName, chaos); err != nil {
-		if isNotFound(err) {
-			return nil, NotFoundErr
-		}
 		return nil, err
 	}
 	return chaos.(chaosmeshapi.InnerObject), nil
